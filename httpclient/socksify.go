@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 
 	bosherr "github.com/cloudfoundry/bosh-utils/errors"
 	proxy "github.com/cloudfoundry/socks5-proxy"
@@ -59,29 +58,13 @@ func SOCKS5DialFuncFromEnvironment(origDialer DialFunc, socks5Proxy ProxyDialer)
 			return errorDialFunc(err, "Reading private key file for SOCKS5 Proxy")
 		}
 
-		var (
-			dialer proxy.DialFunc
-			mut    sync.RWMutex
-		)
 		return func(network, address string) (net.Conn, error) {
-			mut.RLock()
-			haveDialer := dialer != nil
-			mut.RUnlock()
-
-			if haveDialer {
-				return dialer(network, address)
+			proxyDialer, err := socks5Proxy.Dialer(username, string(proxySSHKey), proxyURL.Host)
+			if err != nil {
+				return nil, bosherr.WrapErrorf(err, "Creating SOCKS5 dialer")
 			}
 
-			mut.Lock()
-			defer mut.Unlock()
-			if dialer == nil {
-				proxyDialer, err := socks5Proxy.Dialer(username, string(proxySSHKey), proxyURL.Host)
-				if err != nil {
-					return nil, bosherr.WrapErrorf(err, "Creating SOCKS5 dialer")
-				}
-				dialer = proxyDialer
-			}
-			return dialer(network, address)
+			return proxyDialer(network, address)
 		}
 	}
 
